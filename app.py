@@ -2,16 +2,16 @@ import streamlit as st
 import random
 
 # --- ページ設定 ---
-# ページタイトルとレイアウト（ワイドに設定）
 st.set_page_config(
     page_title="uprマスタークイズ", 
     page_icon="🚚",
     layout="wide"
 )
 
-# --- 1. 問題データセット（100問ストック版） ---
-# 実際には100問に満たないですが、100問をストックする前提の構造です。
-# 問題を増やしたい場合は、このリストに辞書形式で追加してください。
+# --- 1. 問題データセット（100問ストックの基盤） ---
+# 注意: ALL_QUESTIONSリストには、ユニークな（重複しない）問題文と選択肢を設定してください。
+# 現在は30問程度ですが、このリストを100問まで増やすことで、
+# 毎回100問の中から重複なく10問が選ばれます。
 
 ALL_QUESTIONS = [
     # --- 基本情報 (10問) ---
@@ -45,10 +45,10 @@ ALL_QUESTIONS = [
     },
     {
         "category": "基本情報",
-        "question": "uprの企業理念である「Social Sharing Supporter」とは、何を目指す姿か？",
-        "answer": "社会のインフラをシェアするupr",
-        "options": ["社会のインフラをシェアするupr", "次世代技術をリードする企業", "世界の物流を支配する企業", "地域社会に貢献する企業"],
-        "explanation": "「Social Sharing Supporter」は、「社会のインフラをシェアするupr」を目指すという意味です。"
+        "question": "uprが掲げるコーポレートスローガンは？",
+        "answer": "Social Sharing Supporter",
+        "options": ["Value Creation", "Social Sharing Supporter", "Logistics Revolution", "Connecting Tomorrow"],
+        "explanation": "「社会のインフラをシェアするupr」を目指すという意味が込められています。"
     },
     {
         "category": "基本情報",
@@ -227,34 +227,34 @@ ALL_QUESTIONS = [
         "options": ["50名未満", "100名台", "200名台", "500名以上"],
         "explanation": "2024年8月時点で228名（連結）です。"
     },
-    # --- ストックを埋めるために同じ問題をランダムにコピー（合計100問にするための調整用） ---
-    # 実際にはここにユニークな問題を増やしてください
 ]
 
-# 100問に満たない場合、既存問題をランダムに複製して100問のストックを作る（テスト用）
-if len(ALL_QUESTIONS) < 100:
-    temp_stock = ALL_QUESTIONS[:]
-    while len(temp_stock) < 100:
-        temp_stock.extend(random.sample(ALL_QUESTIONS, min(len(ALL_QUESTIONS), 100 - len(temp_stock))))
-    ALL_QUESTIONS = temp_stock[:100]
-
-NUM_QUESTIONS_PER_QUIZ = 10 # 毎回出題する問題数
+# ALL_QUESTIONSが100問に満たない場合、エラー防止のため全問題を出題対象とします。
+# ユーザーはALL_QUESTIONSを100問以上に増やすことを推奨します。
+NUM_QUESTIONS_PER_QUIZ = 10 
 
 # --- 2. Streamlit セッション管理とロジック ---
 
 def init_game():
-    """ゲームの初期化処理（100問から10問をランダム抽出）"""
+    """ゲームの初期化処理（ALL_QUESTIONSからNUM_QUESTIONS_PER_QUIZ問をランダム抽出）"""
     st.session_state["score"] = 0
     st.session_state["current_q_index"] = 0
     st.session_state["finished"] = False
     st.session_state["answered"] = False # 回答済みフラグ
     st.session_state["user_choice"] = None
     
-    # 100問から10問をランダムに抽出してセット
-    st.session_state["questions"] = random.sample(ALL_QUESTIONS, NUM_QUESTIONS_PER_QUIZ)
+    # 【修正確認】ALL_QUESTIONSに重複がなければ、random.sample()で選ばれた10問は重複しません。
+    # ストックが100問未満で10問を選べない場合はエラーになるため、安全策を講じます。
+    try:
+        st.session_state["questions"] = random.sample(ALL_QUESTIONS, NUM_QUESTIONS_PER_QUIZ)
+    except ValueError:
+        # ストックが10問未満の場合、ストック内の全問題を出題する
+        st.session_state["questions"] = random.sample(ALL_QUESTIONS, len(ALL_QUESTIONS))
+
 
 # セッション状態の初期確認
 if "questions" not in st.session_state or len(st.session_state["questions"]) != NUM_QUESTIONS_PER_QUIZ:
+    # 既存の質問リストの長さが設定と異なる場合も初期化
     init_game()
 
 # --- 3. UI/デザインの制御 ---
@@ -267,7 +267,7 @@ with st.sidebar:
     if not st.session_state["finished"]:
         # 進捗バーの表示
         current = st.session_state["current_q_index"]
-        total = NUM_QUESTIONS_PER_QUIZ
+        total = len(st.session_state["questions"]) # 実際に出題される問題数を使用
         progress_ratio = current / total if total > 0 else 0
         
         st.subheader(f"進捗: {current + 1} / {total} 問")
@@ -285,7 +285,7 @@ with st.sidebar:
 if st.session_state["finished"]:
     st.balloons()
     score = st.session_state["score"]
-    total = NUM_QUESTIONS_PER_QUIZ
+    total = len(st.session_state["questions"])
     
     st.markdown("<h1 style='color:#387ef5;'>結果発表！</h1>", unsafe_allow_html=True)
     st.markdown(f"## 🏆 スコア: **{total}問中 {score}問 正解**")
@@ -315,30 +315,28 @@ else:
     # 選択肢のコンテナ
     choices_container = st.container()
     
-    # 選択肢をボタンとして表示（デザイン性向上とマーク非表示の代替）
+    # 選択肢をボタンとして表示
     with choices_container:
         cols = st.columns(len(q_data["options"]))
         for i, option in enumerate(q_data["options"]):
             with cols[i]:
-                # 回答済みの場合、選択したボタンの色を変える
-                is_selected = (st.session_state["answered"] and st.session_state["user_choice"] == option)
-                
-                # 回答ボタンのスタイル
-                btn_style = (
-                    "background-color: #387ef5; color: white;" 
-                    if is_selected 
-                    else "background-color: #f0f2f6; color: black;"
-                )
-                
                 # 回答確定前のみ、ボタンを押せるようにする
                 if not st.session_state["answered"]:
                     if st.button(option, key=f"opt_{idx}_{i}", use_container_width=True):
+                        
+                        # 【スコアカウント修正点】
+                        # 回答ボタンが押された瞬間にスコアを確定させる
+                        is_correct = (option == q_data["answer"])
+                        if is_correct:
+                            st.session_state["score"] += 1
+                        
                         # 回答確定処理
                         st.session_state["user_choice"] = option
                         st.session_state["answered"] = True
-                        st.rerun()
+                        st.rerun() # 結果表示のために再描画
                 else:
                     # 回答後はボタンを無効化して表示
+                    # スタイル設定は不要。ボタンが無効化されることで色が変わる（デザインとして成立）
                     st.button(option, key=f"opt_{idx}_{i}", use_container_width=True, disabled=True)
     
     st.markdown("---")
@@ -347,13 +345,9 @@ else:
     if st.session_state["answered"]:
         user_choice = st.session_state["user_choice"]
         
-        # 判定とスコア加算
+        # 判定表示
         if user_choice == q_data["answer"]:
             st.success(f"✅ 正解！ あなたの回答: **{user_choice}**")
-            # スコアは正解時のみ加算（複数回押しても加算されないようinit_gameの外で制御）
-            if f"q_{idx}_scored" not in st.session_state:
-                st.session_state["score"] += 1
-                st.session_state[f"q_{idx}_scored"] = True # この問題は採点済みとしてマーク
         else:
             st.error(f"❌ 不正解... あなたの回答: **{user_choice}**")
         
@@ -364,7 +358,7 @@ else:
         st.markdown("---")
         
         # 次へボタン
-        if idx + 1 >= NUM_QUESTIONS_PER_QUIZ:
+        if idx + 1 >= len(st.session_state["questions"]):
             if st.button("🎉 結果を見る", use_container_width=True):
                 st.session_state["finished"] = True
                 st.rerun()
